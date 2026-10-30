@@ -1,18 +1,20 @@
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Collections;
 
-/** Reads user data and writes valid users to out.txt in username order. */
-public class UsersApp {
-    public static void main(String[] args) {
+/** Reads the Lab 1 input format and keeps only valid users. */
+public class UserFileReader {
+
+    /**
+     * Invalid rows are reported and skipped. A file error is passed to the
+     * caller, so it can decide how to display the problem.
+     */
+    public static ArrayList<User> readUsers(String inputPath) throws IOException {
         ArrayList<User> users = new ArrayList<>();
-        String inputPath = args.length == 0 ? "Users.txt" : args[0];
 
         try (BufferedReader reader = openInput(inputPath)) {
             String line;
@@ -20,29 +22,14 @@ public class UsersApp {
                 try {
                     users.add(parseUser(line));
                 } catch (IllegalArgumentException exception) {
-                    // Report the invalid row and continue with the next one.
                     System.err.println(line + " " + exception.getMessage());
                 }
             }
-        } catch (IOException exception) {
-            System.err.println("Unable to read users: " + exception.getMessage());
-            return;
         }
-
-        Collections.sort(users);
-        // Create out.txt, replacing the results from any previous run.
-        try (BufferedWriter writer = Files.newBufferedWriter(
-                Paths.get("out.txt"), StandardCharsets.UTF_8)) {
-            for (User user : users) {
-                writer.write(user.toString());
-                writer.write("\n");
-            }
-        } catch (IOException exception) {
-            System.err.println("Unable to write users: " + exception.getMessage());
-        }
+        return users;
     }
 
-    /** Opens a file, or standard input when the path is "-". */
+    /** Keeps the standard-input option from Lab 1. */
     private static BufferedReader openInput(String inputPath) throws IOException {
         if ("-".equals(inputPath)) {
             return new BufferedReader(new InputStreamReader(
@@ -52,7 +39,7 @@ public class UsersApp {
                 StandardCharsets.UTF_8);
     }
 
-    /** Checks the row structure before validating the two fields. */
+    /** Checks the row structure; the User constructor validates the values. */
     private static User parseUser(String line) {
         String trimmedLine = line.trim();
         if (trimmedLine.isEmpty()) {
