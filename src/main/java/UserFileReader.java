@@ -18,7 +18,13 @@ public class UserFileReader {
 
         try (BufferedReader reader = openInput(inputPath)) {
             String line;
+            boolean firstLine = true;
             while ((line = reader.readLine()) != null) {
+                // A UTF-8 BOM marks the file encoding, not part of a username.
+                if (firstLine && line.startsWith("\uFEFF")) {
+                    line = line.substring(1);
+                }
+                firstLine = false;
                 try {
                     users.add(parseUser(line));
                 } catch (IllegalArgumentException exception) {
