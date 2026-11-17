@@ -1,6 +1,7 @@
 import java.util.concurrent.BlockingQueue;
 import java.util.function.Consumer;
 
+import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -19,6 +20,10 @@ public class LoginController {
     private Label errorLabel;
     @FXML
     private Button loginButton;
+    @FXML
+    private Button concurrencyButton;
+    @FXML
+    private Label concurrencyStatus;
 
     private AuthenticationService authentication;
     private AttemptTracker tracker;
@@ -26,6 +31,7 @@ public class LoginController {
     private Consumer<String> onSuccess;
     private Thread loginThread;
     private Thread countdownThread;
+    private Thread experimentThread;
     private boolean closed;
 
     void configure(AuthenticationService authentication, AttemptTracker tracker,
@@ -105,6 +111,41 @@ public class LoginController {
         loginButton.setDisable(disabled);
     }
 
+    @FXML
+    private void handleConcurrencyTest() {
+        if (closed || concurrencyButton.isDisabled()) {
+            return;
+        }
+
+        concurrencyButton.setDisable(true);
+        concurrencyStatus.setText("Running the 20-thread test…");
+        experimentThread = new Thread(() -> {
+            try {
+                ConcurrencyExperiment.Result result = ConcurrencyExperiment.run();
+                Platform.runLater(() -> showExperimentResult(result));
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        }, "concurrency-experiment");
+        experimentThread.start();
+    }
+
+    private void showExperimentResult(ConcurrencyExperiment.Result result) {
+        experimentThread = null;
+        if (closed) {
+            return;
+        }
+
+        String lockout = result.lockoutAtLimit()
+                ? "Lockout started at failure 10,000."
+                : "Lockout threshold test failed.";
+        int expected = ConcurrencyExperiment.EXPECTED_UPDATES;
+        concurrencyStatus.setText(lockout
+                + "\nCounter with synchronized: " + result.withSynchronization() + " / " + expected
+                + "\nCounter without synchronized: " + result.withoutSynchronization() + " / " + expected);
+        concurrencyButton.setDisable(false);
+    }
+
     void shutdown() {
         closed = true;
         if (loginThread != null) {
@@ -112,6 +153,9 @@ public class LoginController {
         }
         if (countdownThread != null) {
             countdownThread.interrupt();
+        }
+        if (experimentThread != null) {
+            experimentThread.interrupt();
         }
     }
 }

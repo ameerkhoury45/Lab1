@@ -86,9 +86,9 @@ public class LoginApp extends Application {
         }
 
         stage.setTitle("GCM - Login");
-        stage.setScene(new Scene(root, 420, 360));
+        stage.setScene(new Scene(root, 420, 425));
         stage.setMinWidth(380);
-        stage.setMinHeight(380);
+        stage.setMinHeight(440);
         // The same Stage is used for both screens, so X always ends the app.
         stage.setOnCloseRequest(event -> Platform.exit());
         stage.show();
