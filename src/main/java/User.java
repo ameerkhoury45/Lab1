@@ -33,7 +33,7 @@ public class User implements Comparable<User> {
         this.password = password;
     }
 
-    private static void validateUsername(String username) {
+    static void validateUsername(String username) {
         if (username == null) {
             throw new IllegalArgumentException(INVALID_USERNAME);
         }
@@ -45,7 +45,7 @@ public class User implements Comparable<User> {
         }
     }
 
-    private static void validatePassword(String password) {
+    static void validatePassword(String password) {
         if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
             throw new IllegalArgumentException(PASSWORD_TOO_SHORT);
         }
