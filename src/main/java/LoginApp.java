@@ -1,4 +1,7 @@
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 
 import javafx.application.Application;
@@ -10,15 +13,23 @@ import javafx.stage.Stage;
 
 /** Starts the JavaFX program and loads the users before showing the login. */
 public class LoginApp extends Application {
+    private LoginSettings settings;
     private ArrayList<User> users = new ArrayList<>();
     private String inputError;
 
     @Override
     public void init() {
-        String inputPath = getParameters().getRaw().isEmpty()
-                ? "Users.txt" : getParameters().getRaw().get(0);
+        BufferedReader console = new BufferedReader(
+                new InputStreamReader(System.in, StandardCharsets.UTF_8));
         try {
-            users = UserFileReader.readUsers(inputPath);
+            settings = LoginSettings.read(getParameters().getRaw(), console, System.out);
+        } catch (IOException exception) {
+            System.err.println("Unable to configure login: " + exception.getMessage());
+            return;
+        }
+
+        try {
+            users = UserFileReader.readUsers("Users.txt");
         } catch (IOException exception) {
             inputError = "Unable to read the users file. Check its name and path.";
             System.err.println("Unable to read users: " + exception.getMessage());
@@ -27,6 +38,11 @@ public class LoginApp extends Application {
 
     @Override
     public void start(Stage stage) throws IOException {
+        if (settings == null) {
+            Platform.exit();
+            return;
+        }
+
         FXMLLoader loader = new FXMLLoader(
                 LoginApp.class.getResource("/login.fxml"));
         Parent root = loader.load();
