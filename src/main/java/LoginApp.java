@@ -1,8 +1,12 @@
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -13,12 +17,18 @@ import javafx.stage.Stage;
 
 /** Starts the JavaFX program and loads the users before showing the login. */
 public class LoginApp extends Application {
+    private final BlockingQueue<FailedAttempt> failures = new LinkedBlockingQueue<>();
     private LoginSettings settings;
-    private ArrayList<User> users = new ArrayList<>();
+    private AuthenticationService authentication;
+    private AttemptTracker tracker;
+    private List<FailureWorker> workers = List.of();
+    private LoginController controller;
+    private byte[] loginLayout;
+    private byte[] welcomeLayout;
     private String inputError;
 
     @Override
-    public void init() {
+    public void init() throws IOException {
         BufferedReader console = new BufferedReader(
                 new InputStreamReader(System.in, StandardCharsets.UTF_8));
         try {
@@ -29,10 +39,23 @@ public class LoginApp extends Application {
         }
 
         try {
-            users = UserFileReader.readUsers("Users.txt");
+            authentication = new AuthenticationService(UserFileReader.readUsers("Users.txt"));
         } catch (IOException exception) {
             inputError = "Unable to read the users file. Check its name and path.";
             System.err.println("Unable to read users: " + exception.getMessage());
+        }
+
+        tracker = new AttemptTracker(settings.maxFailures(), settings.blockSeconds());
+        loginLayout = readLayout("/login.fxml");
+        welcomeLayout = readLayout("/welcome.fxml");
+    }
+
+    private static byte[] readLayout(String resource) throws IOException {
+        try (InputStream input = LoginApp.class.getResourceAsStream(resource)) {
+            if (input == null) {
+                throw new IOException("Missing layout: " + resource);
+            }
+            return input.readAllBytes();
         }
     }
 
@@ -43,14 +66,23 @@ public class LoginApp extends Application {
             return;
         }
 
-        FXMLLoader loader = new FXMLLoader(
-                LoginApp.class.getResource("/login.fxml"));
-        Parent root = loader.load();
-
-        LoginController controller = loader.getController();
-        controller.setUsers(users);
+        FXMLLoader loginLoader = new FXMLLoader();
+        Parent root = loginLoader.load(new ByteArrayInputStream(loginLayout));
+        controller = loginLoader.getController();
         if (inputError != null) {
             controller.showInputError(inputError);
+        } else {
+            FXMLLoader welcomeLoader = new FXMLLoader();
+            Parent welcomeRoot = welcomeLoader.load(new ByteArrayInputStream(welcomeLayout));
+            WelcomeController welcomeController = welcomeLoader.getController();
+            controller.configure(authentication, tracker, failures, username -> {
+                welcomeController.setUsername(username);
+                stage.setScene(new Scene(welcomeRoot, 420, 360));
+                stage.setTitle("GCM - Welcome");
+            });
+            workers = List.of(new FailureWorker(1, tracker, failures),
+                    new FailureWorker(2, tracker, failures));
+            workers.forEach(Thread::start);
         }
 
         stage.setTitle("GCM - Login");
@@ -60,6 +92,14 @@ public class LoginApp extends Application {
         // The same Stage is used for both screens, so X always ends the app.
         stage.setOnCloseRequest(event -> Platform.exit());
         stage.show();
+    }
+
+    @Override
+    public void stop() {
+        if (controller != null) {
+            controller.shutdown();
+        }
+        workers.forEach(Thread::interrupt);
     }
 
     public static void main(String[] args) {

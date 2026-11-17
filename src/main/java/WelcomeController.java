@@ -6,7 +6,7 @@ public class WelcomeController {
     @FXML
     private Label usernameLabel;
 
-    public void setUser(User user) {
-        usernameLabel.setText(user.getName());
+    void setUsername(String username) {
+        usernameLabel.setText(username);
     }
 }

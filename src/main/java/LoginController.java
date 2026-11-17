@@ -1,18 +1,16 @@
-import java.io.IOException;
-import java.util.ArrayList;
+import java.util.concurrent.BlockingQueue;
+import java.util.function.Consumer;
 
 import javafx.fxml.FXML;
-import javafx.fxml.FXMLLoader;
-import javafx.scene.Parent;
-import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
-import javafx.stage.Stage;
 
 /** Handles the login button and displays errors in the login screen. */
 public class LoginController {
+    private static final String INVALID_CREDENTIALS = "פרטים שגויים";
+
     @FXML
     private TextField usernameField;
     @FXML
@@ -22,60 +20,98 @@ public class LoginController {
     @FXML
     private Button loginButton;
 
-    private ArrayList<User> users = new ArrayList<>();
+    private AuthenticationService authentication;
+    private AttemptTracker tracker;
+    private BlockingQueue<FailedAttempt> failures;
+    private Consumer<String> onSuccess;
+    private Thread loginThread;
+    private Thread countdownThread;
+    private boolean closed;
 
-    /** Receives the users that passed the Lab 1 validation. */
-    public void setUsers(ArrayList<User> users) {
-        this.users = users;
+    void configure(AuthenticationService authentication, AttemptTracker tracker,
+            BlockingQueue<FailedAttempt> failures, Consumer<String> onSuccess) {
+        this.authentication = authentication;
+        this.tracker = tracker;
+        this.failures = failures;
+        this.onSuccess = onSuccess;
     }
 
     /** Prevents login when the input file could not be read. */
-    public void showInputError(String message) {
+    void showInputError(String message) {
         errorLabel.setText(message);
-        loginButton.setDisable(true);
-        usernameField.setDisable(true);
-        passwordField.setDisable(true);
+        setLoginDisabled(true);
     }
 
     @FXML
     private void handleLogin() {
-        String username = usernameField.getText();
-        String password = passwordField.getText();
-        errorLabel.setText("");
-
-        if (username.isEmpty() || password.isEmpty()) {
-            errorLabel.setText("Please enter username and password.");
+        if (closed || loginButton.isDisabled()) {
             return;
         }
 
-        // Both values must match the same user. Comparison is case-sensitive.
-        for (User user : users) {
-            if (user.getName().equals(username)
-                    && user.getPassword().equals(password)) {
-                openWelcomeScreen(user);
-                return;
-            }
-        }
-        errorLabel.setText("User or password do not match.");
+        String email = usernameField.getText();
+        String password = passwordField.getText();
+        setLoginDisabled(true);
+        errorLabel.setText("");
+
+        LoginTask task = new LoginTask(email, password, authentication, tracker, failures,
+                result -> showResult(email, result));
+        loginThread = new Thread(task, "login-task");
+        loginThread.start();
     }
 
-    /** Loads a different FXML file and replaces the Scene in the same window. */
-    private void openWelcomeScreen(User user) {
-        try {
-            FXMLLoader loader = new FXMLLoader(
-                    LoginController.class.getResource("/welcome.fxml"));
-            Parent root = loader.load();
-            WelcomeController controller = loader.getController();
-            controller.setUser(user);
+    private void showResult(String email, LoginResult result) {
+        loginThread = null;
+        if (closed) {
+            return;
+        }
 
-            Stage stage = (Stage) loginButton.getScene().getWindow();
-            passwordField.clear();
-            stage.setScene(new Scene(root, 420, 360));
-            stage.setTitle("GCM - Welcome");
-        } catch (IOException exception) {
-            errorLabel.setText("Unable to open the welcome screen.");
-            System.err.println("Unable to load welcome.fxml: "
-                    + exception.getMessage());
+        switch (result.status()) {
+            case SUCCESS -> {
+                passwordField.clear();
+                onSuccess.accept(result.username());
+            }
+            case INVALID_CREDENTIALS -> {
+                int remaining = result.attemptsRemaining();
+                errorLabel.setText(remaining > 0
+                        ? INVALID_CREDENTIALS + ". נותרו " + remaining + " ניסיונות"
+                        : INVALID_CREDENTIALS);
+                setLoginDisabled(false);
+            }
+            case BLOCKED -> {
+                showCountdown(result.blockSecondsRemaining());
+                CountdownTask countdown = new CountdownTask(tracker, email, this::showCountdown);
+                countdownThread = new Thread(countdown, "lockout-countdown");
+                countdownThread.start();
+            }
+        }
+    }
+
+    private void showCountdown(int seconds) {
+        if (closed) {
+            return;
+        }
+        if (seconds > 0) {
+            errorLabel.setText("החשבון חסום, נותרו " + seconds + " שניות");
+        } else {
+            countdownThread = null;
+            errorLabel.setText("");
+            setLoginDisabled(false);
+        }
+    }
+
+    private void setLoginDisabled(boolean disabled) {
+        usernameField.setDisable(disabled);
+        passwordField.setDisable(disabled);
+        loginButton.setDisable(disabled);
+    }
+
+    void shutdown() {
+        closed = true;
+        if (loginThread != null) {
+            loginThread.interrupt();
+        }
+        if (countdownThread != null) {
+            countdownThread.interrupt();
         }
     }
 }

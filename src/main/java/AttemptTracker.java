@@ -23,8 +23,12 @@ final class AttemptTracker {
     }
 
     int remainingBlockSeconds(String email) {
+        return remainingBlockTime(email).secondsRemaining();
+    }
+
+    UserState.BlockTime remainingBlockTime(String email) {
         UserState state = states.get(email);
-        return state == null ? 0 : state.remainingBlockSeconds();
+        return state == null ? UserState.BlockTime.NONE : state.remainingBlockTime();
     }
 
     /** The authentication service must have confirmed that this email exists. */

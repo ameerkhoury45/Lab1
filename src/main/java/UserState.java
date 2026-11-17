@@ -18,17 +18,21 @@ final class UserState {
     }
 
     synchronized int remainingBlockSeconds() {
+        return remainingBlockTime().secondsRemaining();
+    }
+
+    synchronized BlockTime remainingBlockTime() {
         // The count stays at the threshold until the lockout expires.
         if (failures < maxFailures) {
-            return 0;
+            return BlockTime.NONE;
         }
 
         long remainingNanos = blockedUntilNanos - nanoTime.getAsLong();
         if (remainingNanos <= 0) {
             clear();
-            return 0;
+            return BlockTime.NONE;
         }
-        return (int) (1 + (remainingNanos - 1) / NANOS_PER_SECOND);
+        return new BlockTime(remainingNanos);
     }
 
     synchronized FailureResult recordFailure() {
@@ -60,5 +64,13 @@ final class UserState {
     }
 
     record FailureResult(int attemptsRemaining, int blockSecondsRemaining) {
+    }
+
+    record BlockTime(long nanosRemaining) {
+        static final BlockTime NONE = new BlockTime(0);
+
+        int secondsRemaining() {
+            return (int) ((nanosRemaining + NANOS_PER_SECOND - 1) / NANOS_PER_SECOND);
+        }
     }
 }
