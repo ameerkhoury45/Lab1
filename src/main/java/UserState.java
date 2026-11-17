@@ -58,6 +58,11 @@ final class UserState {
         return secondsRemaining;
     }
 
+    synchronized int failureCount() {
+        remainingBlockSeconds();
+        return failures;
+    }
+
     private synchronized void clear() {
         failures = 0;
         blockedUntilNanos = 0;

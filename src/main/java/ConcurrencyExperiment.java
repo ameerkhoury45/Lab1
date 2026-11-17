@@ -15,29 +15,43 @@ final class ConcurrencyExperiment {
     }
 
     static Result run() throws InterruptedException {
-        boolean lockoutAtLimit = checkLockoutThreshold();
+        // A fixed clock keeps the lockout from expiring during this isolated experiment.
+        AttemptTracker tracker = new AttemptTracker(LOCKOUT_LIMIT, BLOCK_SECONDS, () -> 0L);
+        runConcurrent(() -> tracker.recordFailure(TEST_EMAIL));
+        int accountFailures = tracker.failureCount(TEST_EMAIL);
+        boolean lockoutAtLimit = checkLockoutThreshold(tracker) && accountFailures == EXPECTED_UPDATES;
 
         Counter withSynchronization = new Counter();
         runConcurrent(withSynchronization::incrementWithLock);
         Counter withoutSynchronization = new Counter();
         runConcurrent(withoutSynchronization::increment);
-        return new Result(lockoutAtLimit, withSynchronization.value, withoutSynchronization.value);
+        return new Result(lockoutAtLimit, withSynchronization.value, withoutSynchronization.value,
+                accountFailures);
     }
 
-    private static boolean checkLockoutThreshold() throws InterruptedException {
-        // Freeze time so the result measures the threshold without depending on elapsed time.
-        AttemptTracker tracker = new AttemptTracker(LOCKOUT_LIMIT, BLOCK_SECONDS, () -> 0L);
-        runConcurrent(() -> tracker.recordFailure(TEST_EMAIL));
-
+    private static boolean checkLockoutThreshold(AttemptTracker tracker) {
+        boolean firstNineteenCorrect = true;
         for (int failure = EXPECTED_UPDATES + 1; failure < LOCKOUT_LIMIT; failure++) {
             UserState.FailureResult outcome = tracker.recordFailure(TEST_EMAIL);
             if (outcome.blockSecondsRemaining() != 0
                     || outcome.attemptsRemaining() != LOCKOUT_LIMIT - failure) {
-                return false;
+                firstNineteenCorrect = false;
             }
         }
         UserState.FailureResult outcome = tracker.recordFailure(TEST_EMAIL);
-        return outcome.attemptsRemaining() == 0 && outcome.blockSecondsRemaining() == BLOCK_SECONDS;
+        return firstNineteenCorrect && outcome.attemptsRemaining() == 0
+                && outcome.blockSecondsRemaining() == BLOCK_SECONDS;
+    }
+
+    /** Runs the same experiment from the console, including the actual UserState count. */
+    public static void main(String[] args) throws InterruptedException {
+        Result result = run();
+        System.out.println("UserState failures after 20 x 499 calls: " + result.accountFailures()
+                + " / " + EXPECTED_UPDATES);
+        System.out.println("19 additional failures allowed, failure 10000 blocks: "
+                + result.lockoutAtLimit());
+        System.out.println("Independent counter with synchronized: " + result.withSynchronization());
+        System.out.println("Independent counter without synchronized: " + result.withoutSynchronization());
     }
 
     private static void runConcurrent(Runnable update) throws InterruptedException {
@@ -72,7 +86,8 @@ final class ConcurrencyExperiment {
         }
     }
 
-    record Result(boolean lockoutAtLimit, int withSynchronization, int withoutSynchronization) {
+    record Result(boolean lockoutAtLimit, int withSynchronization, int withoutSynchronization,
+            int accountFailures) {
     }
 
     private static final class Counter {

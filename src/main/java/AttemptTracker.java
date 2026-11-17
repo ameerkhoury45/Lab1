@@ -42,4 +42,9 @@ final class AttemptTracker {
         UserState state = states.get(email);
         return state == null ? 0 : state.recordSuccess();
     }
+
+    int failureCount(String email) {
+        UserState state = states.get(email);
+        return state == null ? 0 : state.failureCount();
+    }
 }
